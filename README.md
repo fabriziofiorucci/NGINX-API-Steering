@@ -60,6 +60,22 @@ The sample backend provides the `jwks.json` endpoint to return the JWT secret.
 - Linux VM with Docker-compose v2.20.3+ (tested on Ubuntu 20.04 and 22.04)
 - NGINX Plus certificate and key to build the relevant docker image (tested with NGINX Plus R30-p1)
 
+## High level architecture
+
+```mermaid
+sequenceDiagram
+    Client->>NGINX Plus: REST request (with Basic Auth)
+    NGINX Plus->>Source of truth: Service definition JSON request
+    Source of truth->>NGINX Plus: Service definition JSON reply
+    NGINX Plus->>NGINX Plus: JWT Authentication
+    NGINX Plus->>NGINX Plus: Authorization
+    NGINX Plus->>NGINX Plus: Optional JSON request rewriting
+    NGINX Plus->>Backend: SOAP/REST request
+    Backend->>NGINX Plus: SOAP/REST response
+    NGINX Plus->>NGINX Plus: Optional JSON response rewriting
+    NGINX Plus->>Client: Response
+```
+
 ## Deploying this repository
 
 1. Clone the repository
