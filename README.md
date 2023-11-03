@@ -64,10 +64,10 @@ The sample backend provides the `jwks.json` endpoint to return the JWT secret.
 
 ```mermaid
 sequenceDiagram
-    Client->>NGINX Plus: REST request (with Basic Auth)
+    Client->>NGINX Plus: REST request (with JWT token)
+    NGINX Plus->>NGINX Plus: JWT Authentication
     NGINX Plus->>Source of truth: Service definition JSON request
     Source of truth->>NGINX Plus: Service definition JSON reply
-    NGINX Plus->>NGINX Plus: JWT Authentication
     NGINX Plus->>NGINX Plus: Authorization
     NGINX Plus->>NGINX Plus: Optional JSON request rewriting
     NGINX Plus->>Backend: SOAP/REST request
