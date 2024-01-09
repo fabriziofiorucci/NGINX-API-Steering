@@ -70,8 +70,8 @@ sequenceDiagram
     Source of truth->>NGINX Plus: Service definition JSON reply
     NGINX Plus->>NGINX Plus: Authorization
     NGINX Plus->>NGINX Plus: Optional JSON request rewriting
-    NGINX Plus->>Backend: SOAP/REST request
-    Backend->>NGINX Plus: SOAP/REST response
+    NGINX Plus->>Backend: REST request
+    Backend->>NGINX Plus: REST response
     NGINX Plus->>NGINX Plus: Optional JSON response rewriting
     NGINX Plus->>Client: Response
 ```
