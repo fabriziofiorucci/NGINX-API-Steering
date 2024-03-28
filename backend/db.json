@@ -59,5 +59,25 @@
     "operation": {
       "url": "https://10.5.0.12:5000/echo_data"
     }
+  },
+  {
+    "id": 4,
+    "enabled": true,
+    "uri": "v1.0/template_test",
+    "matchRules": {
+      "method": "POST",
+      "roles": "guest"
+    },
+    "operation": {
+      "url": "https://10.5.0.12:5000/echo_data"
+    },
+    "template": {
+      "name": "",
+      "age": 0,
+      "address": {
+        "street": "",
+        "city": ""
+      }
+    }
   }
 ]

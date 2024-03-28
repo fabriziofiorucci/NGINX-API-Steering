@@ -8,6 +8,7 @@ This is a sample NGINX Plus API Gateway configuration to publish REST APIs and p
 - Authorization based on HTTP method and JWT role match
 - Reverse proxying with URL rewriting
 - Template-based JSON payload manipulation (client-to-server and server-to-client)
+- Template-based JSON payload format validation (mandatory parameters, parameters types)
 
 An external REST API-enabled backend is used to store JSON service definitions that include authorization and rewriting rules.
 The service definition JSON is defined as:
@@ -48,6 +49,14 @@ The service definition JSON is defined as:
           "hostname"
         ]
       }
+    },
+    template": {                                    <-- Template for JSON format validation
+      "name": "",                                   <-- Mandatory parameter, type is string
+      "age": 0,                                     <-- Mandatory parameter, type is integer
+      "address": {                                  <-- Nested parameters
+        "street": "",
+        "city": ""
+      }
     }
   }
 ```
@@ -58,7 +67,7 @@ The sample backend provides the `jwks.json` endpoint to return the JWT secret.
 ## Prerequisites
 
 - Linux VM with Docker-compose v2.20.3+ (tested on Ubuntu 20.04 and 22.04)
-- NGINX Plus certificate and key to build the relevant docker image (tested with NGINX Plus R30-p1)
+- NGINX Plus certificate and key to build the relevant docker image (tested with NGINX Plus R30-p1 and above)
 
 ## High level architecture
 
@@ -343,7 +352,12 @@ $ curl -s http://127.0.0.1:10000/backend/fetchkey/v1.0/api_post | jq
 GET test:
 
 ```
-$ curl -ks -X GET https://127.0.0.1:5001/get_data | jq
+curl -ks -X GET https://127.0.0.1:5001/get_data | jq
+```
+
+Output:
+
+```
 {
   "hostname": "be4e709e5957",
   "timestamp": "2023-10-24 10:32:55"
@@ -353,7 +367,12 @@ $ curl -ks -X GET https://127.0.0.1:5001/get_data | jq
 POST test: the client payload is echoed back in the `payload` field
 
 ```
-$ curl -ks -X POST https://127.0.0.1:5001/echo_data -d '{"var":123}' -H "Content-Type: application/json" | jq
+curl -ks -X POST https://127.0.0.1:5001/echo_data -d '{"var":123}' -H "Content-Type: application/json" | jq
+```
+
+Output:
+
+```
 {
   "hostname": "be4e709e5957",
   "payload": {
@@ -374,7 +393,12 @@ docker logs nginx -f
 ### Test with valid HTTP method with no JWT token
 
 ```
-$ curl -X GET -ki http://127.0.0.1:10080/v1.0/api_get
+curl -X GET -ki http://127.0.0.1:10080/v1.0/api_get
+```
+
+Output:
+
+```
 HTTP/1.1 401 Unauthorized
 Server: nginx/1.25.1
 Date: Tue, 24 Oct 2023 08:38:39 GMT
@@ -395,7 +419,12 @@ WWW-Authenticate: Bearer realm="authentication required"
 ### Test with valid JWT token, HTTP method and URI
 
 ```
-$ curl -X GET -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_get
+curl -X GET -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_get
+```
+
+Output:
+
+```
 HTTP/1.1 200 OK
 Server: nginx/1.25.1
 Date: Tue, 24 Oct 2023 10:51:59 GMT
@@ -409,7 +438,12 @@ Content-Length: 62
 ### Test with valid JWT token and invalid HTTP method
 
 ```
-$ curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_get
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_get
+```
+
+Output:
+
+```
 HTTP/1.1 403 Forbidden
 Server: nginx/1.25.1
 Date: Tue, 24 Oct 2023 10:53:29 GMT
@@ -429,7 +463,12 @@ Connection: keep-alive
 ### Test with valid JWT token and incorrect role (`guest` instead of `devops`)
 
 ```
-$ curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_post -d '{"username": "john.doe@acme.com"}' -H "Content-Type: application/json"
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_post -d '{"username": "john.doe@acme.com"}' -H "Content-Type: application/json"
+```
+
+Output:
+
+```
 HTTP/1.1 403 Forbidden
 Server: nginx/1.25.1
 Date: Tue, 24 Oct 2023 10:55:17 GMT
@@ -449,7 +488,12 @@ Connection: keep-alive
 ### Same request with a valid JWT token and `devops` role
 
 ```
-$ curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://127.0.0.1:10080/v1.0/api_post -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://127.0.0.1:10080/v1.0/api_post -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+```
+
+Output:
+
+```
 HTTP/1.1 200 OK
 Server: nginx/1.25.1
 Date: Wed, 01 Nov 2023 14:55:06 GMT
@@ -569,7 +613,12 @@ $ docker logs nginx -f
 ### Test with no payload rewriting
 
 ```
-$ curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://127.0.0.1:10080/v1.0/api_post_no_change -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://127.0.0.1:10080/v1.0/api_post_no_change -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+```
+
+Output:
+
+```
 HTTP/1.1 200 OK
 Server: nginx/1.25.1
 Date: Wed, 01 Nov 2023 14:22:47 GMT
@@ -580,7 +629,7 @@ Connection: keep-alive
 {"hostname":"b93ecf5e10c5","payload":{"group":"guest","username":"john.doe@acme.com"},"timestamp":"2023-11-01 14:22:47"}
 ```
 
-NGINX logs
+NGINX logs:
 
 ```
 $ docker logs nginx -f
@@ -601,6 +650,154 @@ $ docker logs nginx -f
 2023/11/01 14:22:47 [warn] 7#7: *13 js: --- JSON payload server -> client : no changes
 10.5.0.1 - - [01/Nov/2023:14:22:47 +0000] "POST /v1.0/api_post_no_change HTTP/1.1" 200 132 "-" "curl/7.68.0" "-"
 2023/11/01 14:22:47 [info] 7#7: *13 client 10.5.0.1 closed keepalive connection
+```
+
+### Test with JSON payload checked against template
+
+```
+curl -w '\n' -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/template_test -d '
+{
+  "name": "John",
+  "age": 30,
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+' -H "Content-Type: application/json"
+```
+
+The JSON service definition retrieved from the backend is:
+
+```
+ {
+    "id": 4,
+    "enabled": true,
+    "uri": "v1.0/template_test",
+    "matchRules": {
+      "method": "POST",
+      "roles": "guest"
+    },
+    "operation": {
+      "url": "https://10.5.0.12:5000/echo_data"
+    },
+    "template": {
+      "name": "",
+      "age": 0,
+      "address": {
+        "street": "",
+        "city": ""
+      }
+    }
+  }
+```
+
+Output:
+
+```
+HTTP/1.1 200 OK
+Server: nginx/1.25.3
+Date: Thu, 28 Mar 2024 16:38:41 GMT
+Content-Type: application/json
+Transfer-Encoding: chunked
+Connection: keep-alive
+
+{"hostname":"6c8c15e6b178","payload":{"address":{"city":"New York","street":"123 Main St"},"age":30,"name":"John"},"timestamp":"2024-03-28 16:38:41"}
+```
+
+NGINX logs:
+
+```
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- CLIENT REQUEST ---------------------------
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Client[10.5.0.1] Method[POST] Host[127.0.0.1:10080] URI [/v1.0/template_test] Body[
+{
+  "name": "John",
+  "age": 30,
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/template_test]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
+]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://10.5.0.12:5000/echo_data]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- Checking authorization
+2024/03/28 17:13:33 [warn] 6#6: *45 js: - HTTP method received [POST] -> needed [POST]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: - JWT roles received [guest] -> needed [guest]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- Authorization successful
+2024/03/28 17:13:33 [warn] 6#6: *45 js: +-- JSON template validation [{"address":{"city":"","street":""},"age":0,"name":""}]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |-- Checking JSON payload [[object Object]]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |-- Checking JSON payload [[object Object]]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |---- Property [city] ok
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |---- Property [street] ok
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |---- Property [address] ok
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |---- Property [age] ok
+2024/03/28 17:13:33 [warn] 6#6: *45 js: |---- Property [name] ok
+2024/03/28 17:13:33 [warn] 6#6: *45 js: +-- JSON template validation successful
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- JSON payload client -> server : no changes
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- Proxying request to upstream
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- Upstream returned HTTP [200] payload [{"hostname":"6c8c15e6b178","payload":{"address":{"city":"New York","street":"123 Main St"},"age":30,"name":"John"},"timestamp":"2024-03-28 17:13:33"}
+]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: --- JSON payload server -> client : no changes
+2024/03/28 17:13:33 [info] 6#6: *45 client 10.5.0.1 closed keepalive connection
+```
+
+### Test with incorrect JSON payload check against template
+
+```
+curl -w '\n' -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/template_test -d '
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+' -H "Content-Type: application/json"
+```
+
+Output:
+
+```
+HTTP/1.1 422 
+Server: nginx/1.25.3
+Date: Thu, 28 Mar 2024 17:15:29 GMT
+Content-Length: 0
+Connection: keep-alive
+```
+
+NGINX logs:
+
+```
+2024/03/28 17:15:29 [warn] 6#6: *49 js: --- CLIENT REQUEST ---------------------------
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Client[10.5.0.1] Method[POST] Host[127.0.0.1:10080] URI [/v1.0/template_test] Body[
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/template_test]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
+]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://10.5.0.12:5000/echo_data]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: --- Checking authorization
+2024/03/28 17:15:29 [warn] 6#6: *49 js: - HTTP method received [POST] -> needed [POST]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: - JWT roles received [guest] -> needed [guest]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: --- Authorization successful
+2024/03/28 17:15:29 [warn] 6#6: *49 js: +-- JSON template validation [{"address":{"city":"","street":""},"age":0,"name":""}]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |-- Checking JSON payload [[object Object]]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |-- Checking JSON payload [[object Object]]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |---- Property [city] ok
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |---- Property [street] ok
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |---- Property [address] ok
+2024/03/28 17:15:29 [warn] 6#6: *49 js: |---- Property [age] missing
+2024/03/28 17:15:29 [warn] 6#6: *49 js: +-- JSON template validation failed
+2024/03/28 17:15:29 [info] 6#6: *49 client 10.5.0.1 closed keepalive connection
 ```
 
 ## Deployment removal

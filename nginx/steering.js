@@ -32,19 +32,31 @@ function dbQuery(r) {
                 // Authorization checks
                 r.warn('--- Checking authorization');
 
-                // HTTP method check
-                var authZok = 0;
-
 		r.warn('- HTTP method received [' + r.method + '] -> needed [' + body.rule.matchRules.method + ']');
                 r.warn('- JWT roles received [' + r.variables.jwt_claim_roles + '] -> needed [' + body.rule.matchRules.roles + ']');
 
                 if (r.method == body.rule.matchRules.method && body.rule.matchRules.roles.indexOf(r.variables.jwt_claim_roles) >= 0) {
-                    r.warn('--- Authorization successful');
+                  r.warn('--- Authorization successful');
+                  var requestOk = true;
 
-                    if (r.requestText) {
-                      // Request JSON payload update
-                      var requestBody=JSON.parse(r.requestText);
+                  if (r.requestText) {
+                    // Request JSON payload update
+                    var requestBody=JSON.parse(r.requestText);
 
+                    // JSON payload validation against template
+                    if ('template' in body.rule) {
+                      r.warn('+-- JSON template validation [' + JSON.stringify(body.rule.template) + ']');
+
+                      if (checkJSON(r,requestBody,body.rule.template)) {
+                        r.warn('+-- JSON template validation successful');
+                      } else {
+                        r.warn('+-- JSON template validation failed');
+                        requestOk = false;
+                        r.return(422);
+                      }
+                    }
+
+                    if (requestOk == true) {
                       if ('json' in body.rule && 'to_server' in body.rule.json) {
                         r.warn('--- JSON payload client -> server : being updated')
                         requestBody = JSON.stringify( applyJSONChanges(r, requestBody, body.rule.json.to_server) );
@@ -53,15 +65,18 @@ function dbQuery(r) {
                         requestBody = r.requestText;
                       }
                     }
-
-                    r.warn('--- Proxying request to upstream');
-
-                    r.subrequest('/steeringMode/' + body.rule.operation.url, {
-                        method: r.method, body: requestBody
-                    }, steeringModeSubReqCallback);
+                  }
                 } else {
-                    r.warn('--- Authorization failed');
-                    r.return(403);
+                  r.warn('--- Authorization failed');
+                  requestOk = false;
+                  r.return(403);
+                }
+
+                if (requestOk == true) {
+                  r.warn('--- Proxying request to upstream');
+                  r.subrequest('/steeringMode/' + body.rule.operation.url, {
+                      method: r.method, body: requestBody
+                  }, steeringModeSubReqCallback);
                 }
             }
         }
@@ -158,4 +173,40 @@ function applyJSONChanges(r, payload, jsonTemplate) {
   r.warn('Done updating JSON payload [' + JSON.stringify(payload) + ']');
 
   return payload;
+}
+
+// Check JSON payload conformity to the template
+// JSON keys and key types are verified
+function checkJSON(r, payload, template) {
+  const keys = Object.keys(template);
+
+  r.warn('|-- Checking JSON payload [' + payload + ']');
+
+  for (let i = 0; i < keys.length; i++) {
+    // Property check
+
+    if (!payload.hasOwnProperty(keys[i])) {
+      // JSON key missing in payload
+      r.warn('|---- Property [' + keys[i] + '] missing');
+      return false;
+    }
+
+    // Property type check
+    if (typeof payload[keys[i]] !== typeof template[keys[i]]) {
+      // JSON key with wrong type in payload
+      r.warn('|---- Property [' + keys[i] + '] type wrong');
+      return false;
+    }
+
+    // Nested properties
+    if (typeof template[keys[i]] === 'object') {
+      if(!checkJSON(r, payload[keys[i]], template[keys[i]])) {
+        return false;
+      }
+    }
+
+    r.warn('|---- Property [' + keys[i] + '] ok');
+  }
+
+  return true;
 }
