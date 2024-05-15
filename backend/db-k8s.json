@@ -8,7 +8,7 @@
       "roles": "guest"
     },
     "operation": {
-      "url": "https://10.5.0.11:5000/get_data"
+      "url": "https://api-server-1.nginx-api-steering.svc.cluster.local:5000/get_data"
     }
   },
   {
@@ -20,7 +20,7 @@
       "roles": "devops"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2.nginx-api-steering.svc.cluster.local:5000/echo_data"
     },
     "json": {
       "to_server": {
@@ -57,7 +57,7 @@
       "roles": "devops"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2.nginx-api-steering.svc.cluster.local:5000/echo_data"
     }
   },
   {
@@ -69,7 +69,7 @@
       "roles": "guest"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2.nginx-api-steering.svc.cluster.local:5000/echo_data"
     },
     "template": {
       "name": "",

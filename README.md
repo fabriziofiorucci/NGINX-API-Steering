@@ -23,7 +23,7 @@ The service definition JSON is defined as:
       "roles": "devops"                             <-- JWT role to match
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"     <-- URL to reverse proxy the client request
+      "url": "https://api-server-2:5000/echo_data"  <-- URL to reverse proxy the client request
     },
     "json": {                                       <-- JSON payload manipulation (optional)
       "to_server": {                                <-- client-to-server payload manipulation rules
@@ -66,7 +66,7 @@ The sample backend provides the `jwks.json` endpoint to return the JWT secret.
 
 ## Prerequisites
 
-- Linux VM with Docker-compose v2.20.3+ (tested on Ubuntu 20.04 and 22.04)
+- Linux VM with Docker-compose v2.20.3+ (tested on Ubuntu 20.04 and 22.04) or a running Kubernetes cluster
 - NGINX Plus certificate and key to build the relevant docker image (tested with NGINX Plus R30-p1 and above)
 
 ## High level architecture
@@ -99,18 +99,15 @@ git clone https://github.com/fabriziofiorucci/NGINX-API-Steering
 cd NGINX-API-Steering
 ```
 
-3. Run the startup script to build all docker images and spin up the docker-compose deployment. You will need to use a valid NGINX Plus certificate and key to fetch all software packages from the NGINX private registry
+## Running with docker-compose
+
+1. Run the startup script to build all docker images and spin up the docker-compose deployment. You will need to use a valid NGINX Plus certificate and key to fetch all software packages from the NGINX private registry
 
 ```
-$ ./nginx-api-steering.sh -o start -C /etc/ssl/nginx/nginx-repo.crt -K /etc/ssl/nginx/nginx-repo.key[+] Running 5/5
- ✔ Network nginx-api-steering_lab-network  Created        0.3s
- ✔ Container api-server-1                  Started        0.9s
- ✔ Container api-server-2                  Started        0.9s
- ✔ Container nginx                         Started        0.9s
- ✔ Container backend                       Started        0.9s
+./nginx-api-steering.sh -o start -C /etc/ssl/nginx/nginx-repo.crt -K /etc/ssl/nginx/nginx-repo.key
 ```
 
-4. Check running containers:
+2. Check running containers:
 
 ```
 $ docker ps
@@ -121,8 +118,75 @@ bd13b5e4ecf1   api-server           "python apiserver.py"    45 seconds ago   Up
 46f25f772f63   backend              "python backend.py"      45 seconds ago   Up 43 seconds   0.0.0.0:10000->5000/tcp, :::10000->5000/tcp                                            backend
 ```
 
+## Running on Kubernetes
 
-## NGINX Plus dashboard
+1. Build the docker images:
+
+```
+./nginx-api-steering.sh -o build -C /etc/ssl/nginx/nginx-repo.crt -K /etc/ssl/nginx/nginx-repo.key 
+```
+
+2. Make sure all images have been correctly built:
+
+```
+$ docker images
+REPOSITORY                        TAG       IMAGE ID       CREATED         SIZE
+api-server                        latest    bc502c140891   2 minutes ago   159MB
+backend                           latest    ac783909638e   2 minutes ago   145MB
+nginx-api-steering                latest    0752ea9e5400   2 minutes ago   33.1MB
+```
+
+3. Tag and push the docker images:
+
+```
+docker tag api-server:latest registry.k8s.ie.ff.lan:31005/nginx-api-steering:api-server
+docker tag backend:latest registry.k8s.ie.ff.lan:31005/nginx-api-steering:backend
+docker tag nginx-api-steering:latest registry.k8s.ie.ff.lan:31005/nginx-api-steering:nginx-api-steering
+```
+
+```
+docker push registry.k8s.ie.ff.lan:31005/nginx-api-steering:api-server
+docker push registry.k8s.ie.ff.lan:31005/nginx-api-steering:backend
+docker push registry.k8s.ie.ff.lan:31005/nginx-api-steering:nginx-api-steering
+```
+
+4. Deploy all manifests:
+
+```
+./nginx-api-steering.sh -o start-k8s
+```
+
+5. Make sure all relevant objects have been created:
+
+```
+$ kubectl get all -n nginx-api-steering
+NAME                                READY   STATUS    RESTARTS   AGE
+pod/api-server-1-6596f78694-nfjvm   1/1     Running   0          20s
+pod/api-server-2-847868565b-5lwk8   1/1     Running   0          20s
+pod/backend-74b87464fd-cmc6h        1/1     Running   0          20s
+pod/nginx-9cbcb8bcd-hz6xm           1/1     Running   0          20s
+
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+service/api-server-1   ClusterIP   10.103.76.109   <none>        5000/TCP   20s
+service/api-server-2   ClusterIP   10.111.202.8    <none>        5000/TCP   20s
+service/backend        ClusterIP   10.107.14.237   <none>        5000/TCP   20s
+service/nginx          ClusterIP   10.97.140.134   <none>        80/TCP     20s
+
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/api-server-1   1/1     1            1           20s
+deployment.apps/api-server-2   1/1     1            1           20s
+deployment.apps/backend        1/1     1            1           20s
+deployment.apps/nginx          1/1     1            1           20s
+
+NAME                                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/api-server-1-6596f78694   1         1         1       20s
+replicaset.apps/api-server-2-847868565b   1         1         1       20s
+replicaset.apps/backend-74b87464fd        1         1         1       20s
+replicaset.apps/nginx-9cbcb8bcd           1         1         1       20s
+```
+
+
+## NGINX Plus dashboard (docker-compose only)
 
 Using your favourite browser open https://127.0.0.1:20080/dashboard.html
 
@@ -214,7 +278,7 @@ Payload
 Signature is valid
 ```
 
-## Backend DB test
+## Backend DB test (docker-compose only)
 
 Backend DB, fetching the JWT secret:
 
@@ -245,7 +309,7 @@ $ curl -s 127.0.0.1:10000/backend/fetchallkeys | jq
         "roles": "guest"
       },
       "operation": {
-        "url": "https://10.5.0.11:5000/get_data"
+        "url": "https://api-server-1:5000/get_data"
       },
       "uri": "v1.0/api_get"
     },
@@ -282,7 +346,7 @@ $ curl -s 127.0.0.1:10000/backend/fetchallkeys | jq
         "roles": "devops"
       },
       "operation": {
-        "url": "https://10.5.0.12:5000/echo_data"
+        "url": "https://api-server-2:5000/echo_data"
       },
       "uri": "v1.0/api_post"
     },
@@ -294,7 +358,7 @@ $ curl -s 127.0.0.1:10000/backend/fetchallkeys | jq
         "roles": "devops"
       },
       "operation": {
-        "url": "https://10.5.0.12:5000/echo_data"
+        "url": "https://api-server-2:5000/echo_data"
       },
       "uri": "v1.0/api_post_no_change"
     }
@@ -340,14 +404,14 @@ $ curl -s http://127.0.0.1:10000/backend/fetchkey/v1.0/api_post | jq
       "roles": "devops"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2:5000/echo_data"
     },
     "uri": "v1.0/api_post"
   }
 }
 ```
 
-## Direct backend API access:
+## Direct backend API access (docker-compose only):
 
 GET test:
 
@@ -382,7 +446,7 @@ Output:
 }
 ```
 
-## REST API access test
+## REST API access test - for docker-compose
 
 Display NGINX Plus logs:
 
@@ -460,7 +524,7 @@ Connection: keep-alive
 </html>
 ```
 
-### Test with valid JWT token and incorrect role (`guest` instead of `devops`)
+### Test with valid JWT token and invalid role (`guest` instead of `devops`)
 
 ```
 curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/api_post -d '{"username": "john.doe@acme.com"}' -H "Content-Type: application/json"
@@ -516,7 +580,7 @@ The JSON service definition retrieved from the backend is:
       "roles": "devops"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2:5000/echo_data"
     },
     "json": {
       "to_server": {
@@ -587,9 +651,9 @@ $ docker logs nginx -f
 2023/11/01 14:59:06 [warn] 6#6: *9 js: --- CLIENT REQUEST ---------------------------
 2023/11/01 14:59:06 [warn] 6#6: *9 js: Client[10.5.0.1] Method[POST] Host[127.0.0.1:10080] URI [/v1.0/api_post] Body[{"username": "john.doe@acme.com", "group": "guest"}]
 2023/11/01 14:59:06 [warn] 6#6: *9 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/api_post]
-2023/11/01 14:59:06 [warn] 6#6: *9 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/api_post] status[200] body[{"rule":{"enabled":true,"id":2,"json":{"to_client":{"del":["hostname"],"set":[{"new_response_field":"ADDED"}]},"to_server":{"del":["group"],"set":[{"field1":"value1"},{"field2":"value2"}]}},"matchRules":{"method":"POST","roles":"devops"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"uri":"v1.0/api_post"}}
+2023/11/01 14:59:06 [warn] 6#6: *9 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/api_post] status[200] body[{"rule":{"enabled":true,"id":2,"json":{"to_client":{"del":["hostname"],"set":[{"new_response_field":"ADDED"}]},"to_server":{"del":["group"],"set":[{"field1":"value1"},{"field2":"value2"}]}},"matchRules":{"method":"POST","roles":"devops"},"operation":{"url":"https://api-server-2:5000/echo_data"},"uri":"v1.0/api_post"}}
 ]
-2023/11/01 14:59:06 [warn] 6#6: *9 js: Rewriting request [127.0.0.1:10080/v1.0/api_post] -> [https://10.5.0.12:5000/echo_data]
+2023/11/01 14:59:06 [warn] 6#6: *9 js: Rewriting request [127.0.0.1:10080/v1.0/api_post] -> [https://api-server-2:5000/echo_data]
 2023/11/01 14:59:06 [warn] 6#6: *9 js: --- Checking authorization
 2023/11/01 14:59:06 [warn] 6#6: *9 js: - HTTP method received [POST] -> needed [POST]
 2023/11/01 14:59:06 [warn] 6#6: *9 js: - JWT roles received [devops] -> needed [devops]
@@ -636,9 +700,9 @@ $ docker logs nginx -f
 2023/11/01 14:22:47 [warn] 7#7: *13 js: --- CLIENT REQUEST ---------------------------
 2023/11/01 14:22:47 [warn] 7#7: *13 js: Client[10.5.0.1] Method[POST] Host[127.0.0.1:10080] URI [/v1.0/api_post_no_change] Body[{"username": "john.doe@acme.com", "group": "guest"}]
 2023/11/01 14:22:47 [warn] 7#7: *13 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/api_post_no_change]
-2023/11/01 14:22:47 [warn] 7#7: *13 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/api_post_no_change] status[200] body[{"rule":{"enabled":true,"id":3,"matchRules":{"method":"POST","roles":"devops"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"uri":"v1.0/api_post_no_change"}}
+2023/11/01 14:22:47 [warn] 7#7: *13 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/api_post_no_change] status[200] body[{"rule":{"enabled":true,"id":3,"matchRules":{"method":"POST","roles":"devops"},"operation":{"url":"https://api-server-2:5000/echo_data"},"uri":"v1.0/api_post_no_change"}}
 ]
-2023/11/01 14:22:47 [warn] 7#7: *13 js: Rewriting request [127.0.0.1:10080/v1.0/api_post_no_change] -> [https://10.5.0.12:5000/echo_data]
+2023/11/01 14:22:47 [warn] 7#7: *13 js: Rewriting request [127.0.0.1:10080/v1.0/api_post_no_change] -> [https://api-server-2:5000/echo_data]
 2023/11/01 14:22:47 [warn] 7#7: *13 js: --- Checking authorization
 2023/11/01 14:22:47 [warn] 7#7: *13 js: - HTTP method received [POST] -> needed [POST]
 2023/11/01 14:22:47 [warn] 7#7: *13 js: - JWT roles received [devops] -> needed [devops]
@@ -679,7 +743,7 @@ The JSON service definition retrieved from the backend is:
       "roles": "guest"
     },
     "operation": {
-      "url": "https://10.5.0.12:5000/echo_data"
+      "url": "https://api-server-2:5000/echo_data"
     },
     "template": {
       "name": "",
@@ -720,9 +784,9 @@ NGINX logs:
 }
 ]
 2024/03/28 17:13:33 [warn] 6#6: *45 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/template_test]
-2024/03/28 17:13:33 [warn] 6#6: *45 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://api-server-2:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
 ]
-2024/03/28 17:13:33 [warn] 6#6: *45 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://10.5.0.12:5000/echo_data]
+2024/03/28 17:13:33 [warn] 6#6: *45 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://api-server-2:5000/echo_data]
 2024/03/28 17:13:33 [warn] 6#6: *45 js: --- Checking authorization
 2024/03/28 17:13:33 [warn] 6#6: *45 js: - HTTP method received [POST] -> needed [POST]
 2024/03/28 17:13:33 [warn] 6#6: *45 js: - JWT roles received [guest] -> needed [guest]
@@ -744,7 +808,7 @@ NGINX logs:
 2024/03/28 17:13:33 [info] 6#6: *45 client 10.5.0.1 closed keepalive connection
 ```
 
-### Test with incorrect JSON payload check against template
+### Test with invalid JSON payload check against template
 
 ```
 curl -w '\n' -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://127.0.0.1:10080/v1.0/template_test -d '
@@ -782,9 +846,9 @@ NGINX logs:
 }
 ]
 2024/03/28 17:15:29 [warn] 6#6: *49 js: Subrequest [/dbQuery/backend/fetchkey/v1.0/template_test]
-2024/03/28 17:15:29 [warn] 6#6: *49 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://10.5.0.12:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Rule found: URI[/dbQuery/backend/fetchkey/v1.0/template_test] status[200] body[{"rule":{"enabled":true,"id":4,"matchRules":{"method":"POST","roles":"guest"},"operation":{"url":"https://api-server-2:5000/echo_data"},"template":{"address":{"city":"","street":""},"age":0,"name":""},"uri":"v1.0/template_test"}}
 ]
-2024/03/28 17:15:29 [warn] 6#6: *49 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://10.5.0.12:5000/echo_data]
+2024/03/28 17:15:29 [warn] 6#6: *49 js: Rewriting request [127.0.0.1:10080/v1.0/template_test] -> [https://api-server-2:5000/echo_data]
 2024/03/28 17:15:29 [warn] 6#6: *49 js: --- Checking authorization
 2024/03/28 17:15:29 [warn] 6#6: *49 js: - HTTP method received [POST] -> needed [POST]
 2024/03/28 17:15:29 [warn] 6#6: *49 js: - JWT roles received [guest] -> needed [guest]
@@ -800,14 +864,91 @@ NGINX logs:
 2024/03/28 17:15:29 [info] 6#6: *49 client 10.5.0.1 closed keepalive connection
 ```
 
-## Deployment removal
+## REST API access test - for Kubernetes
+
+Note: the example FQDN `nginx-api-steering.k8s.f5.ff.lan` is used. This is defined in the `kubernetes.yaml` file.
+
+Display NGINX Plus logs:
 
 ```
-$ ./nginx-api-steering.sh -o stop
-[+] Running 5/5
- ✔ Container backend                       Removed                                                                                                                                            11.1s 
- ✔ Container api-server-1                  Removed                                                                                                                                            11.1s 
- ✔ Container api-server-2                  Removed                                                                                                                                            11.1s 
- ✔ Container nginx                         Removed                                                                                                                                             0.3s 
- ✔ Network nginx-api-steering_lab-network  Removed                                                                                                                                             0.1s 
+kubectl logs -l app=nginx -n nginx-api-steering -f
+```
+
+Test with valid HTTP method with no JWT token (returns 401):
+
+```
+curl -X GET -ki http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_get
+```
+
+Test with valid JWT token, HTTP method and URI (returns 200):
+
+```
+curl -X GET -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_get
+```
+
+Test with valid JWT token and invalid HTTP method (return 403):
+
+```
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_get
+```
+
+Test with valid JWT token and invalid `guest` role (returns 403):
+
+```
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_post -d '{"username": "john.doe@acme.com"}' -H "Content-Type: application/json"
+```
+
+Test with valid JWT token and valid `devops` role (returns 200):
+
+```
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_post -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+```
+
+Test with no payload rewriting (returns 200):
+
+```
+curl -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.devops`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/api_post_no_change -d '{"username": "john.doe@acme.com", "group": "guest"}' -H "Content-Type: application/json"
+```
+
+Test with JSON payload checked against template (returns 200):
+
+```
+curl -w '\n' -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/template_test -d '
+{
+  "name": "John",
+  "age": 30,
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+' -H "Content-Type: application/json"
+```
+
+Test with invalid JSON payload check against template (returns 422):
+
+```
+curl -w '\n' -X POST -ki -H "Authorization: Bearer `cat jwt/jwt.guest`" http://nginx-api-steering.k8s.f5.ff.lan/v1.0/template_test -d '
+{
+  "name": "John",
+  "address": {
+    "street": "123 Main St",
+    "city": "New York"
+  }
+}
+' -H "Content-Type: application/json"
+```
+
+## Deployment removal
+
+For docker-compose:
+
+```
+./nginx-api-steering.sh -o stop
+```
+
+For Kubernetes:
+
+```
+./nginx-api-steering.sh -o stop-k8s
 ```

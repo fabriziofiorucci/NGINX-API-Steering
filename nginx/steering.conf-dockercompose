@@ -1,5 +1,7 @@
 js_import steering from conf.d/steering.js;
 
+resolver 127.0.0.11;
+
 upstream backend-db
 {
 	zone backend-db 64k;
